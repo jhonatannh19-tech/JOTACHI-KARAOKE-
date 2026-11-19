@@ -1,0 +1,52 @@
+name: Build APK JOTACHI
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Localizar proyecto (zip o carpeta)
+        id: p
+        run: |
+          if [ -f jotachi_karaoke.zip ]; then
+            rm -rf _proj && mkdir _proj && unzip -q jotachi_karaoke.zip -d _proj
+            D=$(dirname "$(find _proj -name pubspec.yaml | head -1)")
+          else
+            D=$(dirname "$(find . -name pubspec.yaml -not -path './_proj/*' | head -1)")
+          fi
+          echo "dir=$D" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generar proyecto Android
+        working-directory: ${{ steps.p.outputs.dir }}
+        run: |
+          mkdir -p /tmp/bak && cp -r lib pubspec.yaml /tmp/bak/
+          [ -d assets ] && cp -r assets /tmp/bak/ || true
+          flutter create --platforms=android --org com.jotachi --project-name jotachi_karaoke .
+          rm -rf lib && cp -r /tmp/bak/lib . && cp /tmp/bak/pubspec.yaml .
+          rm -rf test
+          python3 tool/patch_android.py
+
+      - name: Compilar
+        working-directory: ${{ steps.p.outputs.dir }}
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JOTACHI-KARAOKE-APK
+          path: ${{ steps.p.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
